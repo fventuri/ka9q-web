@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G0ORX Web SDR - RX888 using ka9q-radio</title>
+    <link rel="stylesheet" type="text/css" href="style.css" />
+    <script src="colormap.js"></script>
+    <script src="spectrum.js"></script>
+    <script src="pcm-player.js"></script>
+    <script src="radio.js"></script> 
+</head>
+<body>
+    <h1>G0ORX Web SDR - using ka9q-radio with RX-888 MKII</h1>
+    <audio id="audio"> 
+    </audio>
+    <canvas id="waterfall"></canvas>
+    <br>
+    <table style="border: solid">
+    <tr>
+    <td rowspan=1 colspan=1>
+    <button id="rangedown" onclick="spectrum.rangeDown()">Range ^</button>
+    </td>
+    <td rowspan=1 colspan=1>
+    <button id="rangeinc" onclick="spectrum.rangeIncrease()">Range +</button>
+    </td>
+    <td rowspan=2 colspan=2>
+<!--
+    <span id="freq" style="color:green; font-size:40px; border: solid; width: 200px">16200000</span>
+-->
+    <input type="text" id="freq" style="color:green; font-size:40px; border: solid; width: 200px" value="16200000" onchange="setFrequency()"/>
+    </td>
+    <td rowspan=2 colspan=1>
+    <button style="height:50px" onclick="setFrequency()">Set Frequency</button>
+    </td>
+    <td rowspan=2 colspan=1>
+    <button onmousedown="startIncrement()" onmouseup="stopIncrement()" style="width:60px; height:50px">  Freq +  </button>
+    </td>
+    <td rowspan=2 colspan=1>
+    <button onmousedown="startDecrement()" onmouseup="stopDecrement()" style="width:60px; height:50px">  Freq -  </button>
+    </td>
+    <td rowspan=2 colspan=2>
+    <label for="step">Step:</label> 
+    <select name="step" id="step" onchange="step_changed(this.value)"> 
+        <option value="10">10Hz</option> 
+        <option value="100">100Hz</option> 
+        <option value="250">250Hz</option> 
+        <option value="500">500Hz</option> 
+        <option value="1000" selected>1KHz</option> 
+        <option value="9000">9KHz</option> 
+        <option value="10000">10KHz</option> 
+        <option value="100000">100KHz</option> 
+        <option value="1000000">1MHz</option> 
+    </select>
+    </td>
+    <td rowspan=1 colspan=2>
+    <label for="mode">Mode:</label> 
+    <select name="mode" id="mode" onchange="setMode(this.value)"> 
+        <option value="cwu">CWU</option> 
+        <option value="cwl">CWL</option> 
+        <option value="usb" selected>USB</option> 
+        <option value="lsb">LSB</option> 
+        <option value="am">AM</option> 
+        <option value="sam">SAM</option> 
+    </select>
+    </td>
+    <td rowspan=1 colspan=1>
+    <button id="zoomplus" onclick="zoomin()">Zoom In</button>
+    </td>
+    <td rowspan=1 colspan=1>
+    <button id="zoomminus" onclick="zoomout()">Zoom Out</button>
+    </td>
+    <td rowspan=2 colspan=1>
+    <button id="audio_button" onclick="audio_start_stop()" value="START">Start Audio</button>
+    </td>
+    </tr>
+    <tr>
+    <td rowspan=1 colspan=1>
+    <button id="rangeup" onclick="spectrum.rangeUp()">Range v</button>
+    </td>
+    <td rowspan=1 colspan=1>
+    <button id="rangedec" onclick="spectrum.rangeDecrease()">Range -</button>
+    </td>
+    <td rowspan=1 colspan=2>
+    <label for="band">Band:</label> 
+    <select name="band" id="band" onchange="setBand(this.value); if(value>28000000) zoomTo(2000); else zoomTo(200); if(value<10000000) selectMode('lsb'); else selectMode('usb'); this.min_db = -130"> 
+        <option value="" disabled selected hidden>Select Band</option>
+        <option value="1900000">160M</option> 
+        <option value="3600000">80M</option> 
+        <option value="5406500">60M</option> 
+        <option value="7150000">40M</option> 
+        <option value="10130000">30M</option> 
+        <option value="14175000">20M</option> 
+        <option value="18111000">17M</option> 
+        <option value="21300000">15M</option> 
+        <option value="24931000">12M</option> 
+        <option value="29000000">10M</option> 
+    </select>
+    </td>
+    <td rowspan=1 colspan=2 align='center'>
+    <button id="zoomcenter" onclick="zoomcenter()">Zoom Center</button>
+    </td>
+    </tr>
+    </table>
+    <span id="info"> </span>
+    <span id="audiospan"> </span>
+    <br>
+    <ul>
+    <li>Use mouse to click to a frequency.</li>
+    <li>Use mouse wheel to increment/decrement frequency by Step amount.</li>
+    <li>Enter frequency in Hz and hit Return or press <b>Set Frequency</b>.</li>
+    </ul>
+<!--
+    <button id="colormap" onclick="spectrum.toggleColor()">Color Map</button>
+-->
+    <i>Web Server by John Melton, G0ORX (https://github.com/g0orx/ka9q-radio)</i>
+    <br>
+    <i>ka9q-radio by Phil Karn, KA9Q (https://github.com/ka9q/ka9q-radio)</i>
+    <br>
+    <i>Onion Web Framework by David Moreno (https://github.com/davidmoreno/onion)</i>
+    <br>
+    <i>Spectrum/Waterfall Display by Jeppe Ledet-Pedersen (https://github.com/jledet/waterfall)</i>
+  </body>
+</html>
+

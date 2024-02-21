@@ -1,0 +1,29 @@
+KA9Q_RADIO_DIR=../ka9q-radio
+PREFIX=/usr/local
+
+# for production
+DOPTS=-DNDEBUG=1 -O3
+
+# for debugging
+DOPTS=-g
+        
+COPTS=-march=native -std=gnu11 -pthread -Wall -funsafe-math-optimizations -D_GNU_SOURCE=1
+
+INCLUDES=-I$(KA9Q_RADIO_DIR)
+
+RESOURCES_BASE_DIR=$(PREFIX)/share/ka9q-web
+
+CFLAGS=$(DOPTS) $(COPTS)
+CPPFLAGS=$(INCLUDES) -DRESOURCES_BASE_DIR=$(RESOURCES_BASE_DIR)
+
+KA9Q_RADIO_OBJS=$(KA9Q_RADIO_DIR)/multicast.o $(KA9Q_RADIO_DIR)/status.o $(KA9Q_RADIO_DIR)/misc.o
+
+ka9q-web: ka9q-web.o $(KA9Q_RADIO_OBJS)
+	$(CC) -o $@ $^ -lonion -lm
+
+install: ka9q-web
+	install -m 755 $^ $(PREFIX)/bin
+	install -m 644 -D html/* -t $(RESOURCES_BASE_DIR)/html/
+
+install-config:
+	install -b -m 644 config/* /etc/radio
