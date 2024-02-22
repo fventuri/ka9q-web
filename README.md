@@ -16,9 +16,14 @@ A web interface for ka9q-radio by John Melton G0ORX
 The Onion framework requires GnuTLS and libgcrypto to compute the SHA1 checksum required by WebSockets.
 They can be installed as follows:
 
-- on Ubuntu, Debian, and similar Linux distributions:
+- on Ubuntu and similar Linux distributions:
 ```
 sudo apt install libgnutls-dev libgcrypt-dev
+```
+
+- on Debiam Stable (12, bookworm)  and similar Linux distributions:
+```
+sudo apt install libgnutls28-dev libgcrypt-dev
 ```
 
 - on RedHat, CentOS, Fedora and similar Linux distributions:
