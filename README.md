@@ -34,7 +34,14 @@ git clone https://github.com/davidmoreno/onion
 cd onion
 mkdir build
 cd build
-cmake -DONION_USE_SSL=false ..
+cmake ..
+```
+
+Before going ahead with the next steps, do make sure that the output from 'cmake' contains the line:
+> -- SSL support is compiled in.
+If you don't see it, please review the instructions about the prerequisites for the Onion framework in the previous section.
+
+```
 make
 sudo make install
 sudo ldconfig
