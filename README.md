@@ -18,12 +18,12 @@ They can be installed as follows:
 
 - on Ubuntu, Debian, and similar Linux distributions:
 ```
-sudo apt install gnutls-dev libgcrypto-dev
+sudo apt install libgnutls-dev libgcrypt-dev
 ```
 
 - on RedHat, CentOS, Fedora and similar Linux distributions:
 ```
-sudo dnf install gnutls-devel libgcrypto-devel
+sudo dnf install gnutls-devel libgcrypt-devel
 ```
 
 
