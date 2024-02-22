@@ -11,7 +11,23 @@ A web interface for ka9q-radio by John Melton G0ORX
 - detailed instructions are here: https://github.com/ka9q/ka9q-radio/blob/main/docs/INSTALL.md
 
 
-### 2 - Build and install the Onion framework
+### 2 - Install the prerequisites for the Onion framework: GnuTLS and libgcrypto
+
+The Onion framework requires GnuTLS and libgcrypto to compute the SHA1 checksum required by WebSockets.
+They can be installed as follows:
+
+- on Ubuntu, Debian, and similar Linux distributions:
+```
+sudo apt install gnutls-dev libgcrypto-dev
+```
+
+- on RedHat, CentOS, Fedora and similar Linux distributions:
+```
+sudo dnf install gnutls-devel libgcrypto-devel
+```
+
+
+### 3 - Build and install the Onion framework
 
 ```
 git clone https://github.com/davidmoreno/onion
@@ -25,7 +41,7 @@ sudo ldconfig
 ```
 
 
-### 3 - Build and install ka9q-web
+### 4 - Build and install ka9q-web
 
 - edit the first line of `Makefile` to point to the directory where you built ka9q-radio
 - run:
