@@ -21,7 +21,7 @@ They can be installed as follows:
 sudo apt install libgnutls28-dev libgcrypt20-dev
 ```
 
-- on Debiam Stable (12, bookworm)  and similar Linux distributions:
+- on Debian Stable (12, bookworm)  and similar Linux distributions:
 ```
 sudo apt install libgnutls28-dev libgcrypt-dev
 ```

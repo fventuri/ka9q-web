@@ -416,14 +416,6 @@ int main(int argc,char **argv) {
     }
   }
 
-  for(int i=1;i<argc;i++) {
-    if ((strcmp(argv[i], "--port") == 0) || (strcmp(argv[i], "-p") == 0)) {
-      port = argv[++i];
-    } else {
-      dirname = argv[i];
-    }
-  }
-
   pthread_mutex_init(&session_mutex,NULL);
   init_connections(mcast);
 
