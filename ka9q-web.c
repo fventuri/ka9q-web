@@ -47,6 +47,8 @@ int Ctl_fd,Status_fd;
 pthread_mutex_t ctl_mutex;
 pthread_t ctrl_task;
 pthread_t audio_task;
+pthread_mutex_t output_data_dest_address_mutex;
+pthread_cond_t output_data_dest_address_cond;
 
 struct session {
   bool spectrum_active;
@@ -540,14 +542,13 @@ static void *audio_thread(void *arg) {
 
   //fprintf(stderr,"%s\n",__FUNCTION__);
 
-  char const *mcast_address_text = "web.local";
-
   int input_fd;
   {
-    char iface[1024];
-    struct sockaddr sock;
-    resolve_mcast(mcast_address_text,&sock,DEFAULT_RTP_PORT,iface,sizeof(iface));
-    input_fd = listen_mcast(&sock,iface);
+    pthread_mutex_lock(&output_data_dest_address_mutex);
+    while(Channel.output.data_dest_address.ss_family == 0)
+        pthread_cond_wait(&output_data_dest_address_cond, &output_data_dest_address_mutex);
+    input_fd = listen_mcast(&Channel.output.data_dest_address,NULL);
+    pthread_mutex_unlock(&output_data_dest_address_mutex);
   }
 
   if(input_fd==-1) {
@@ -562,7 +563,7 @@ static void *audio_thread(void *arg) {
     if(size == -1){
       if(errno != EINTR){ // Happens routinely, e.g., when window resized
         perror("recvfrom");
-        fprintf(stderr,"address=%s\n",mcast_address_text);
+        fprintf(stderr,"address=%s\n",formatsock(&Channel.output.data_dest_address));
         usleep(1000);
       }
       continue;  // Reuse current buffer
@@ -1025,7 +1026,10 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
       decode_socket(&channel->output.data_source_address,cp,optlen);
       break;
     case OUTPUT_DATA_DEST_SOCKET:
+      pthread_mutex_lock(&output_data_dest_address_mutex);
       decode_socket(&channel->output.data_dest_address,cp,optlen);
+      pthread_cond_signal(&output_data_dest_address_cond);
+      pthread_mutex_unlock(&output_data_dest_address_mutex);
       break;
     case OUTPUT_SSRC:
       channel->output.rtp.ssrc = decode_int32(cp,optlen);
