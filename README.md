@@ -81,6 +81,12 @@ ka9q-web
 
 Finally open a browser and connect locally to http://localhost:8081 , or from a remote browser to http://<your computer name/IP>:8081
 
+NOTE: to start ka9q-web on a different ka9q-radio control address, the command line option is '-m', for instance:
+```
+ka9q-web -m hf.local
+```
+
+
 ## References
 
 - [John Melton G0ORX fork of ka9q-radio](https://github.com/g0orx/ka9q-radio)
