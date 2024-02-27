@@ -34,10 +34,10 @@
     <button style="height:50px" onclick="setFrequency()">Set Frequency</button>
     </td>
     <td rowspan=2 colspan=1>
-    <button onmousedown="startIncrement()" onmouseup="stopIncrement()" style="width:60px; height:50px">  Freq +  </button>
+    <button onmousedown="startDecrement()" onmouseup="stopDecrement()" style="width:60px; height:50px">  Freq -  </button>
     </td>
     <td rowspan=2 colspan=1>
-    <button onmousedown="startDecrement()" onmouseup="stopDecrement()" style="width:60px; height:50px">  Freq -  </button>
+    <button onmousedown="startIncrement()" onmouseup="stopIncrement()" style="width:60px; height:50px">  Freq +  </button>
     </td>
     <td rowspan=2 colspan=2>
     <label for="step">Step:</label> 
@@ -47,6 +47,7 @@
         <option value="250">250Hz</option> 
         <option value="500">500Hz</option> 
         <option value="1000" selected>1KHz</option> 
+        <option value="5000">5KHz</option> 
         <option value="9000">9KHz</option> 
         <option value="10000">10KHz</option> 
         <option value="100000">100KHz</option> 
@@ -62,6 +63,7 @@
         <option value="lsb">LSB</option> 
         <option value="am">AM</option> 
         <option value="sam">SAM</option> 
+	<option value="fm">FM</option>
     </select>
     </td>
     <td rowspan=1 colspan=1>
