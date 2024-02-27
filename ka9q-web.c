@@ -66,7 +66,7 @@ struct session {
   uint32_t bin_width;
   float tc;
   int bins;
-  char description[16];
+  char description[128];
   struct session *next;
   struct session *previous;
 };
@@ -525,7 +525,7 @@ onion_connection_status home(void *data, onion_request * req,
   sp->tc=1.0;
   sp->next=NULL;
   sp->previous=NULL;
-  strcpy(sp->description,onion_request_get_client_description(req));
+  strlcpy(sp->description,onion_request_get_client_description(req),sizeof(sp->description));
   pthread_mutex_init(&sp->ws_mutex,NULL);
   pthread_mutex_init(&sp->spectrum_mutex,NULL);
   add_session(sp);
