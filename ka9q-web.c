@@ -424,7 +424,7 @@ int main(int argc,char **argv) {
   onion *o = onion_new(O_THREADED);
   onion_url *urls=onion_root_url(o);
   onion_set_port(o, port);
-  onion_set_hostname(o, "0.0.0.0");
+  onion_set_hostname(o, "::");
   onion_handler *pages = onion_handler_export_local_new(dirname);
   onion_handler_add(onion_url_to_handler(urls), pages);
   onion_url_add(urls, "status", status);
