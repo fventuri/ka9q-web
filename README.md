@@ -34,6 +34,8 @@ sudo dnf install gnutls-devel libgcrypt-devel
 
 ### 3 - Build and install the Onion framework
 
+The Orion framework includes a lot of dependencies (like sqlite3, redis, etc) that are not needed just to run ka9q-web. The instructions below build the Onion framework with all the dependencies. See section 3A for instructions to build a lighter version of the Onion framework with only the few necessary dependencies.
+
 ```
 git clone https://github.com/davidmoreno/onion
 cd onion
@@ -53,6 +55,28 @@ sudo make install
 sudo ldconfig
 ```
 
+### 3A - Build and install a light version of the Onion framework
+
+These commands are almost identical to the ones in the section above except that all the unused features of the Onion framework are disabled to limit the number of dependencies and other packages.
+
+```
+git clone https://github.com/davidmoreno/onion
+cd onion
+mkdir build
+cd build
+cmake -DONION_USE_PAM=false -DONION_USE_PNG=false -DONION_USE_JPEG=false -DONION_USE_XML2=false -DONION_USE_SYSTEMD=false -DONION_USE_SQLITE3=false -DONION_USE_REDIS=false -DONION_USE_GC=false -DONION_USE_TESTS=false -DONION_EXAMPLES=false -DONION_USE_BINDINGS_CPP=false ..
+```
+
+Before going ahead with the next steps, do make sure that the output from 'cmake' contains the line:
+> -- SSL support is compiled in.
+
+If you don't see it, please review the instructions about the prerequisites for the Onion framework in the previous section.
+
+```
+make
+sudo make install
+sudo ldconfig
+```
 
 ### 4 - Build and install ka9q-web
 
