@@ -14,7 +14,10 @@
     <h1>G0ORX Web SDR + ka9q-radio</h1>
     <audio id="audio"> 
     </audio>
-    <canvas id="waterfall"></canvas>
+    <!-- canvas needs 'tabindex' to be focusable
+         https://stackoverflow.com/questions/12886286/addeventlistener-for-keydown-on-canvas
+    -->
+    <canvas id="waterfall" tabindex="1"></canvas>
     <br>
     <table style="border: solid">
     <tr>
@@ -23,6 +26,9 @@
     </td>
     <td rowspan=1 colspan=1>
     <button id="rangeinc" onclick="spectrum.rangeIncrease()">Range +</button>
+    </td>
+    <td rowspan=2 colspan=1>
+    <button id="colormap" onclick="spectrum.toggleColor()">Color Map</button>
     </td>
     <td rowspan=2 colspan=2>
 <!--
@@ -112,9 +118,6 @@
     <li>Use mouse wheel to increment/decrement frequency by Step amount.</li>
     <li>Enter frequency in Hz and hit Return or press <b>Set Frequency</b>.</li>
     </ul>
-<!--
-    <button id="colormap" onclick="spectrum.toggleColor()">Color Map</button>
--->
     <i>Web Server by John Melton, G0ORX (https://github.com/g0orx/ka9q-radio)</i>
     <br>
     <i>ka9q-radio by Phil Karn, KA9Q (https://github.com/ka9q/ka9q-radio)</i>

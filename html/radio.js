@@ -254,6 +254,7 @@
           //document.getElementById('waterfall').addEventListener("mouseup", onMouseUp, false);
           //document.getElementById('waterfall').addEventListener("mousemove", onMouseMove, false);
           document.getElementById('waterfall').addEventListener("wheel", onWheel, false);
+          document.getElementById('waterfall').addEventListener("keydown", (event) => { spectrum.onKeypress(event); }, false);
 //        }
 
           info = document.getElementById('info');
