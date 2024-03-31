@@ -43,12 +43,12 @@
 // no handlers in /usr/local/include??
 onion_handler *onion_handler_export_local_new(const char *localpath);
 
-int Ctl_fd,Status_fd;
+int Ctl_fd,Input_fd,Status_fd;
 pthread_mutex_t ctl_mutex;
 pthread_t ctrl_task;
 pthread_t audio_task;
-pthread_mutex_t output_data_dest_address_mutex;
-pthread_cond_t output_data_dest_address_cond;
+pthread_mutex_t output_dest_socket_mutex;
+pthread_cond_t output_dest_socket_cond;
 
 struct session {
   bool spectrum_active;
@@ -78,17 +78,18 @@ extern int init_control(struct session *sp);
 extern void control_set_frequency(struct session *sp,char *str);
 extern void control_set_mode(struct session *sp,char *str);
 int init_demod(struct channel *channel);
-void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw,float tc);
+void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw);
 int extract_powers(float *power,int npower,uint64_t *time,double *freq,double *bin_bw,int32_t const ssrc,uint8_t const * const buffer,int length);
 void control_poll(struct session *sp);
 void *spectrum_thread(void *arg);
 void *ctrl_thread(void *arg);
 void *poll_thread(void *arg);
 int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length);
+static int send_poll(int ssrc);
 
 struct frontend Frontend;
-static struct sockaddr_storage Metadata_source_address;      // Source of metadata
-static struct sockaddr_storage Metadata_dest_address;      // Dest of metadata (typically multicast)
+static struct sockaddr_storage Metadata_source_socket;       // Source of metadata
+static struct sockaddr_storage Metadata_dest_socket;         // Dest of metadata (typically multicast)
 
 static int const DEFAULT_IP_TOS = 48;
 static int const DEFAULT_MCAST_TTL = 1;
@@ -522,7 +523,6 @@ onion_connection_status home(void *data, onion_request * req,
   sp->center_frequency=16200000; // mid of 32.4MHz - assuming we are running at 64.8MHz sample rate
   sp->bins=MAX_BINS;
   sp->bin_width=20000; // width of a pixel in hz
-  sp->tc=1.0;
   sp->next=NULL;
   sp->previous=NULL;
   strlcpy(sp->description,onion_request_get_client_description(req),sizeof(sp->description));
@@ -542,28 +542,27 @@ static void *audio_thread(void *arg) {
 
   //fprintf(stderr,"%s\n",__FUNCTION__);
 
-  int input_fd;
   {
-    pthread_mutex_lock(&output_data_dest_address_mutex);
-    while(Channel.output.data_dest_address.ss_family == 0)
-        pthread_cond_wait(&output_data_dest_address_cond, &output_data_dest_address_mutex);
-    input_fd = listen_mcast(&Channel.output.data_dest_address,NULL);
-    pthread_mutex_unlock(&output_data_dest_address_mutex);
+    pthread_mutex_lock(&output_dest_socket_mutex);
+    while(Channel.output.dest_socket.ss_family == 0)
+        pthread_cond_wait(&output_dest_socket_cond, &output_dest_socket_mutex);
+    Input_fd = listen_mcast(&Channel.output.dest_socket,NULL);
+    pthread_mutex_unlock(&output_dest_socket_mutex);
   }
 
-  if(input_fd==-1) {
+  if(Input_fd==-1) {
     pthread_exit(NULL);
   }
 
   while(1) {
     struct sockaddr_storage sender;
     socklen_t socksize = sizeof(sender);
-    int size = recvfrom(input_fd,&pkt->content,sizeof(pkt->content),0,(struct sockaddr *)&sender,&socksize);
+    int size = recvfrom(Input_fd,&pkt->content,sizeof(pkt->content),0,(struct sockaddr *)&sender,&socksize);
 
     if(size == -1){
       if(errno != EINTR){ // Happens routinely, e.g., when window resized
         perror("recvfrom");
-        fprintf(stderr,"address=%s\n",formatsock(&Channel.output.data_dest_address));
+        fprintf(stderr,"address=%s\n",formatsock(&Channel.output.dest_socket));
         usleep(1000);
       }
       continue;  // Reuse current buffer
@@ -608,14 +607,14 @@ int init_connections(const char *multicast_group) {
 
   pthread_mutex_init(&ctl_mutex,NULL);
 
-  resolve_mcast(multicast_group,&Metadata_dest_address,DEFAULT_STAT_PORT,iface,sizeof(iface));
-  Status_fd = listen_mcast(&Metadata_dest_address,iface);
+  resolve_mcast(multicast_group,&Metadata_dest_socket,DEFAULT_STAT_PORT,iface,sizeof(iface));
+  Status_fd = listen_mcast(&Metadata_dest_socket,iface);
   if(Status_fd == -1){
     fprintf(stderr,"Can't listen to mcast status %s\n",multicast_group);
     return(EX_IOERR);
   }
 
-  Ctl_fd = connect_mcast(&Metadata_dest_address,iface,Mcast_ttl,IP_tos);
+  Ctl_fd = connect_mcast(&Metadata_dest_socket,iface,Mcast_ttl,IP_tos);
   if(Ctl_fd < 0){
     fprintf(stderr,"connect to mcast control failed: RX\n");
     return(EX_IOERR);
@@ -715,7 +714,7 @@ void control_set_mode(struct session *sp,char *str) {
   }
 }
 
-void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw,float tc) {
+void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw) {
   uint8_t cmdbuffer[PKTSIZE];
   uint8_t *bp = cmdbuffer;
   *bp++ = CMD; // Command
@@ -726,7 +725,6 @@ void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw
   encode_float(&bp,RADIO_FREQUENCY,frequency);
   encode_int(&bp,BIN_COUNT,bins);
   encode_float(&bp,NONCOHERENT_BIN_BW,bin_bw);
-  encode_float(&bp,INTEGRATE_TC,tc);
   encode_eol(&bp);
 
   sp->spectrum_tag=tag;
@@ -852,8 +850,6 @@ int init_demod(struct channel *channel){
   channel->fm.pdeviation = channel->linear.cphase = channel->linear.lock_timer = NAN;
   channel->output.gain = NAN;
   channel->tp1 = channel->tp2 = NAN;
-
-  channel->output.data_fd = channel->output.rtcp_fd = -1;
   return 0;
 }
 
@@ -862,7 +858,7 @@ void *spectrum_thread(void *arg) {
   //fprintf(stderr,"%s: %d\n",__FUNCTION__,sp->ssrc);
   while(sp->spectrum_active) {
     pthread_mutex_lock(&sp->spectrum_mutex);
-    control_get_powers(sp,(float)sp->center_frequency,sp->bins,(float)sp->bin_width,sp->tc);
+    control_get_powers(sp,(float)sp->center_frequency,sp->bins,(float)sp->bin_width);
     pthread_mutex_unlock(&sp->spectrum_mutex);
     if(usleep(100000) !=0) {
       perror("spectrum_thread: usleep(100000)");
@@ -877,7 +873,7 @@ void *poll_thread(void *arg) {
   //fprintf(stderr,"%s\n",__FUNCTION__);
   while(1) {
     pthread_mutex_lock(&ctl_mutex);
-    send_poll(Ctl_fd,sp->ssrc);
+    send_poll(sp->ssrc);
     pthread_mutex_unlock(&ctl_mutex);
     if(usleep(250000) !=0) {
       perror("poll_thread: usleep(50000)");
@@ -889,7 +885,7 @@ void *poll_thread(void *arg) {
 
 void *ctrl_thread(void *arg) {
   struct session *sp;
-  socklen_t ssize = sizeof(Metadata_source_address);
+  socklen_t ssize = sizeof(Metadata_source_socket);
   uint8_t buffer[PKTSIZE/sizeof(float)];
   uint8_t output_buffer[PKTSIZE];
   float powers[PKTSIZE / sizeof(float)];
@@ -901,7 +897,7 @@ void *ctrl_thread(void *arg) {
   realtime();
 
   while(1) {
-    int length = recvfrom(Status_fd,buffer,sizeof(buffer),0,(struct sockaddr *)&Metadata_source_address,&ssize);
+    int length = recvfrom(Status_fd,buffer,sizeof(buffer),0,(struct sockaddr *)&Metadata_source_socket,&ssize);
     if(length > 2 && (enum pkt_type)buffer[0] == STATUS) {
       uint32_t ssrc=get_ssrc(buffer+1,length-1);
       uint32_t tag=get_tag(buffer+1,length-1);
@@ -1007,7 +1003,7 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
     case EOL:
       break;
     case CMD_CNT:
-      channel->commands = decode_int32(cp,optlen);
+      channel->status.packets_in = decode_int32(cp,optlen);
       break;
     case DESCRIPTION:
       FREE(Frontend.description);
@@ -1023,13 +1019,13 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
       Frontend.samples = decode_int64(cp,optlen);
       break;
     case OUTPUT_DATA_SOURCE_SOCKET:
-      decode_socket(&channel->output.data_source_address,cp,optlen);
+      decode_socket(&channel->output.source_socket,cp,optlen);
       break;
     case OUTPUT_DATA_DEST_SOCKET:
-      pthread_mutex_lock(&output_data_dest_address_mutex);
-      decode_socket(&channel->output.data_dest_address,cp,optlen);
-      pthread_cond_signal(&output_data_dest_address_cond);
-      pthread_mutex_unlock(&output_data_dest_address_mutex);
+      pthread_mutex_lock(&output_dest_socket_mutex);
+      decode_socket(&channel->output.dest_socket,cp,optlen);
+      pthread_cond_signal(&output_dest_socket_cond);
+      pthread_mutex_unlock(&output_dest_socket_mutex);
       break;
     case OUTPUT_SSRC:
       channel->output.rtp.ssrc = decode_int32(cp,optlen);
@@ -1125,7 +1121,7 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
       channel->output.samples = decode_int64(cp,optlen);
       break;
     case COMMAND_TAG:
-      channel->command_tag = decode_int32(cp,optlen);
+      channel->status.tag = decode_int32(cp,optlen);
       break;
     case RADIO_FREQUENCY:
       channel->tune.freq = decode_double(cp,optlen);
@@ -1185,16 +1181,16 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
       channel->tp2 = decode_float(cp,optlen);
       break;
     case SQUELCH_OPEN:
-      channel->squelch_open = dB2power(decode_float(cp,optlen));
+      channel->fm.squelch_open = dB2power(decode_float(cp,optlen));
       break;
     case SQUELCH_CLOSE:
-      channel->squelch_close = dB2power(decode_float(cp,optlen));
+      channel->fm.squelch_close = dB2power(decode_float(cp,optlen));
       break;
     case DEEMPH_GAIN:
-      channel->deemph.gain = decode_float(cp,optlen);
+      channel->fm.gain = decode_float(cp,optlen);
       break;
     case DEEMPH_TC:
-      channel->deemph.rate = 1e6*decode_float(cp,optlen);
+      channel->fm.rate = 1e6*decode_float(cp,optlen);
       break;
     case PL_TONE:
       channel->fm.tone_freq = decode_float(cp,optlen);
@@ -1217,7 +1213,7 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
       Frontend.rf_atten = decode_float(cp,optlen);
       break;
     case BLOCKS_SINCE_POLL:
-      channel->blocks_since_poll = decode_int64(cp,optlen);
+      channel->status.blocks_since_poll = decode_int64(cp,optlen);
       break;
     case PRESET:
       {
@@ -1230,5 +1226,22 @@ int decode_radio_status(struct channel *channel,uint8_t const *buffer,int length
     }
     cp += optlen;
   }
+  return 0;
+}
+
+// Send empty poll command on specified descriptor
+static int send_poll(int ssrc){
+  uint8_t cmdbuffer[PKTSIZE];
+  uint8_t *bp = cmdbuffer;
+  *bp++ = 1; // Command
+
+  uint32_t tag = random();
+  encode_int(&bp,COMMAND_TAG,tag);
+  encode_int(&bp,OUTPUT_SSRC,ssrc); // poll specific SSRC, or request ssrc list with ssrc = 0
+  encode_eol(&bp);
+  int const command_len = bp - cmdbuffer;
+  if(sendto(Input_fd, cmdbuffer, command_len, 0, (struct sockaddr *)&Metadata_dest_socket,sizeof(struct sockaddr)) != command_len)
+    return -1;
+
   return 0;
 }
