@@ -57,10 +57,8 @@ struct session {
   pthread_mutex_t ws_mutex;
   uint32_t ssrc;
   pthread_t poll_task;
-  uint32_t poll_tag;
   pthread_t spectrum_task;
   pthread_mutex_t spectrum_mutex;
-  uint32_t spectrum_tag;
   uint32_t center_frequency;
   uint32_t frequency;
   uint32_t bin_width;
@@ -70,7 +68,7 @@ struct session {
   struct session *next;
   struct session *previous;
 };
-  
+
 #define START_SESSION_ID 1000
 
 int init_connections(const char *multicast_group);
@@ -383,16 +381,16 @@ onion_connection_status websocket_cb(void *data, onion_websocket * ws,
         break;
     }
   }
-  
+
   return OCS_NEED_MORE_DATA;
 }
 
 int main(int argc,char **argv) {
-  char *port="8081";
 #define xstr(s) str(s)
 #define str(s) #s
-  const char *dirname=xstr(RESOURCES_BASE_DIR) "/html";
-  const char *mcast="web.local";
+  char const *port="8081";
+  char const *dirname=xstr(RESOURCES_BASE_DIR) "/html";
+  char const *mcast="web.local";
 
   App_path=argv[0];
   {
@@ -464,7 +462,7 @@ onion_connection_status status(void *data, onion_request * req,
          "<th>bin width(Hz)</th>"
          "<th>Audio</th>"
          "</tr>");
-     
+
       struct session *sp = sessions;
       while(sp!=NULL) {
         int32_t min_f=sp->center_frequency-((sp->bin_width*sp->bins)/2);
@@ -532,7 +530,7 @@ onion_connection_status home(void *data, onion_request * req,
   //fprintf(stderr,"%s: onion_websocket_set_callback: websocket_cb\n",__FUNCTION__);
   onion_websocket_set_callback(ws, websocket_cb);
 
-  return OCS_WEBSOCKET; 
+  return OCS_WEBSOCKET;
 }
 
 static void *audio_thread(void *arg) {
@@ -726,9 +724,6 @@ void control_get_powers(struct session *sp,float frequency,int bins,float bin_bw
   encode_float(&bp,NONCOHERENT_BIN_BW,bin_bw);
   encode_eol(&bp);
 
-  sp->spectrum_tag=tag;
-
-//fprintf(stderr,"%s: ssrc=%d tag=%d\n",__FUNCTION__,sp->ssrc+1,sp->spectrum_tag);
 
   int const command_len = bp - cmdbuffer;
   pthread_mutex_lock(&ctl_mutex);
@@ -743,8 +738,7 @@ void control_poll(struct session *sp) {
   uint8_t *bp = cmdbuffer;
   *bp++ = 1; // Command
 
-  sp->poll_tag = random();
-  encode_int(&bp,COMMAND_TAG,sp->poll_tag);
+  encode_int(&bp,COMMAND_TAG,random());
   encode_int(&bp,OUTPUT_SSRC,sp->ssrc); // poll specific SSRC, or request ssrc list with ssrc = 0
   encode_eol(&bp);
   int const command_len = bp - cmdbuffer;
@@ -899,84 +893,83 @@ void *ctrl_thread(void *arg) {
     int length = recvfrom(Status_fd,buffer,sizeof(buffer),0,(struct sockaddr *)&Metadata_source_socket,&ssize);
     if(length > 2 && (enum pkt_type)buffer[0] == STATUS) {
       uint32_t ssrc=get_ssrc(buffer+1,length-1);
-      uint32_t tag=get_tag(buffer+1,length-1);
-//fprintf(stderr,"%s: ssrc=%d tag=%d\n",__FUNCTION__,ssrc,tag);
-      if(ssrc%2==1) {
-        sp=find_session_from_ssrc(ssrc-1);
+      //      fprintf(stderr,"%s: ssrc=%d\n",__FUNCTION__,ssrc);
+      if(ssrc%2==1) { // Spectrum data
+        if((sp=find_session_from_ssrc(ssrc-1)) != NULL){
+	  //	  fprintf(stderr,"forward spectrum: ws=%p\n",sp->ws);
+	  struct rtp_header rtp;
+	  memset(&rtp,0,sizeof(rtp));
+	  rtp.type = 0x7F; // spectrum data
+	  rtp.version = RTP_VERS;
+	  rtp.ssrc = sp->ssrc;
+	  rtp.marker = true; // Start with marker bit on to reset playout buffer
+	  rtp.seq = rtp_seq++;
+	  uint8_t *bp=(uint8_t *)hton_rtp((char *)output_buffer,&rtp);
+
+	  uint32_t *ip=(uint32_t*)bp;
+	  *ip++=htonl(sp->center_frequency);
+	  *ip++=htonl(sp->frequency);
+	  *ip++=htonl(sp->bin_width);
+
+	  int header_size=(uint8_t*)ip-&output_buffer[0];
+	  int length=(PKTSIZE-header_size)/sizeof(float);
+	  int npower = extract_powers(powers,length, &time,&r_freq,&r_bin_bw,sp->ssrc+1,buffer+1,length-1);
+	  if(npower < 0){
+	    continue; // Invalid for some reason
+	  }
+
+	  int mid=npower/2;
+	  float *fp=(float*)ip;
+
+	  // below center
+	  for(int i=mid; i < npower; i++) {
+	    *fp++=(powers[i] == 0) ? 120.0 : 10*log10(powers[i]);
+	  }
+	  // above center
+	  for(int i=0; i < mid; i++) {
+	    *fp++=(powers[i] == 0) ? 120.0 : 10*log10(powers[i]);
+	  }
+
+	  // send the spectrum data to the client
+	  pthread_mutex_lock(&sp->ws_mutex);
+	  onion_websocket_set_opcode(sp->ws,OWS_BINARY);
+	  int size=(uint8_t*)fp-&output_buffer[0];
+	  int r=onion_websocket_write(sp->ws,(char *)output_buffer,size);
+	  if(r<=0) {
+	    fprintf(stderr,"%s: write failed: %d(size=%d)\n",__FUNCTION__,r,size);
+	  }
+	  pthread_mutex_unlock(&sp->ws_mutex);
+	}
       } else {
-        sp=find_session_from_ssrc(ssrc);
+        if((sp=find_session_from_ssrc(ssrc)) != NULL){
+	  decode_radio_status(&Frontend,&Channel,buffer+1,length-1);
+	  pthread_mutex_lock(&output_dest_socket_mutex);
+	  if(Channel.output.dest_socket.ss_family != 0)
+	    pthread_cond_broadcast(&output_dest_socket_cond);
+	  pthread_mutex_unlock(&output_dest_socket_mutex);
+	  struct rtp_header rtp;
+	  memset(&rtp,0,sizeof(rtp));
+	  rtp.type = 0x7E; // radio data
+	  rtp.version = RTP_VERS;
+	  rtp.ssrc = sp->ssrc;
+	  rtp.marker = true; // Start with marker bit on to reset playout buffer
+	  rtp.seq = rtp_seq++; // ??????
+	  uint8_t *bp=(uint8_t *)hton_rtp((char *)output_buffer,&rtp);
+	  //int header_size=bp-&output_buffer[0];
+	  //int length=(PKTSIZE-header_size)/sizeof(float);
+	  encode_float(&bp,BASEBAND_POWER,Channel.sig.bb_power);
+	  encode_float(&bp,LOW_EDGE,Channel.filter.min_IF);
+	  encode_float(&bp,HIGH_EDGE,Channel.filter.max_IF);
+	  pthread_mutex_lock(&sp->ws_mutex);
+	  onion_websocket_set_opcode(sp->ws,OWS_BINARY);
+	  int size=(uint8_t*)bp-&output_buffer[0];
+	  int r=onion_websocket_write(sp->ws,(char *)output_buffer,size);
+	  if(r<=0) {
+	    fprintf(stderr,"%s: write failed: %d\n",__FUNCTION__,r);
+	  }
+	  pthread_mutex_unlock(&sp->ws_mutex);
+	}
       }
-      if(sp!=NULL) {
-//fprintf(stderr,"%s: ws=%p ssrc=%d tag=%d poll_tag=%d spectrum_tag=%d\n",__FUNCTION__,sp->ws,ssrc,tag,sp->poll_tag,sp->spectrum_tag);
-          if(tag==sp->poll_tag) { // channel status
-            decode_radio_status(&Frontend,&Channel,buffer+1,length-1);
-            struct rtp_header rtp;
-            memset(&rtp,0,sizeof(rtp));
-            rtp.type = 0x7E; // radio data
-            rtp.version = RTP_VERS;
-            rtp.ssrc = sp->ssrc;
-            rtp.marker = true; // Start with marker bit on to reset playout buffer
-            rtp.seq = rtp_seq++; // ??????
-            uint8_t *bp=(uint8_t *)hton_rtp((char *)output_buffer,&rtp);
-            //int header_size=bp-&output_buffer[0];
-            //int length=(PKTSIZE-header_size)/sizeof(float);
-            encode_float(&bp,BASEBAND_POWER,Channel.sig.bb_power);
-            encode_float(&bp,LOW_EDGE,Channel.filter.min_IF);
-            encode_float(&bp,HIGH_EDGE,Channel.filter.max_IF);
-            pthread_mutex_lock(&sp->ws_mutex);
-            onion_websocket_set_opcode(sp->ws,OWS_BINARY);
-            int size=(uint8_t*)bp-&output_buffer[0];
-            int r=onion_websocket_write(sp->ws,(char *)output_buffer,size);
-            if(r<=0) {
-              fprintf(stderr,"%s: write failed: %d\n",__FUNCTION__,r);
-            }
-            pthread_mutex_unlock(&sp->ws_mutex);
-          } else if(tag==sp->spectrum_tag) { // spectrum
-//fprintf(stderr,"forward spectrum: tag=%d ws=%p\n",tag,sp->ws);
-            struct rtp_header rtp;
-            memset(&rtp,0,sizeof(rtp));
-            rtp.type = 0x7F; // spectrum data
-            rtp.version = RTP_VERS;
-            rtp.ssrc = sp->ssrc;
-            rtp.marker = true; // Start with marker bit on to reset playout buffer
-            rtp.seq = rtp_seq++;
-            uint8_t *bp=(uint8_t *)hton_rtp((char *)output_buffer,&rtp);
-
-            uint32_t *ip=(uint32_t*)bp;
-            *ip++=htonl(sp->center_frequency);
-            *ip++=htonl(sp->frequency);
-            *ip++=htonl(sp->bin_width);
-
-            int header_size=(uint8_t*)ip-&output_buffer[0];
-            int length=(PKTSIZE-header_size)/sizeof(float);
-            int npower = extract_powers(powers,length, &time,&r_freq,&r_bin_bw,sp->ssrc+1,buffer+1,length-1);
-            if(npower < 0){
-              continue; // Invalid for some reason
-            }
-
-            int mid=npower/2;
-            float *fp=(float*)ip;
-
-            // below center
-            for(int i=mid; i < npower; i++) {
-              *fp++=(powers[i] == 0) ? 120.0 : 10*log10(powers[i]);
-            }
-            // above center
-            for(int i=0; i < mid; i++) {
-              *fp++=(powers[i] == 0) ? 120.0 : 10*log10(powers[i]);
-            }
-  
-            // send the spectrum data to the client
-            pthread_mutex_lock(&sp->ws_mutex);
-            onion_websocket_set_opcode(sp->ws,OWS_BINARY);
-            int size=(uint8_t*)fp-&output_buffer[0];
-            int r=onion_websocket_write(sp->ws,(char *)output_buffer,size);
-            if(r<=0) {
-              fprintf(stderr,"%s: write failed: %d(size=%d)\n",__FUNCTION__,r,size);
-            }
-            pthread_mutex_unlock(&sp->ws_mutex);
-          } // else unknown tag
-      } // sp!=NULL
     } else if(length > 2 && (enum pkt_type)buffer[0] == STATUS) {
 fprintf(stderr,"%s: type=0x%02X\n",__FUNCTION__,buffer[0]);
     }
