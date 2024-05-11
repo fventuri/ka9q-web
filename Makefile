@@ -22,7 +22,7 @@ ka9q-web: ka9q-web.o $(KA9Q_RADIO_OBJS)
 	$(CC) -o $@ $^ -lonion -lbsd -lm
 
 install: ka9q-web
-	install -m 755 $^ $(PREFIX)/bin
+	install -m 755 $^ $(PREFIX)/sbin
 	install -m 644 -D html/* -t $(RESOURCES_BASE_DIR)/html/
 
 install-config:

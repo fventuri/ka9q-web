@@ -1,0 +1,21 @@
+# systemd unit for G0ORX's web front end to my radio receiver
+# Phil Karn, KA9Q, Feb 2024
+
+[Unit]
+Description=G0ORX web server
+Requires=network-online.target
+
+[Service]
+Type=simple
+User=radio
+Group=radio
+AmbientCapabilities=CAP_SYS_NICE
+ReadWritePaths=/etc/fftw /var/lib/ka9q-radio
+UMask=002
+ExecStart=/usr/local/sbin/ka9q-web -m hf-kfs-omni-status.local -p 8081
+Restart=always
+RestartSec=5
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
