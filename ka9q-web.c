@@ -135,7 +135,6 @@ void add_session(struct session *sp) {
 }
 
 void delete_session(struct session *sp) {
-  pthread_mutex_lock(&session_mutex);
 //fprintf(stderr,"%s: sp=%p src=%d ws=%p\n",__FUNCTION__,sp,sp->ssrc,sp->ws);
   if(sp->next!=NULL) {
     sp->next->previous=sp->previous;
@@ -152,7 +151,8 @@ void delete_session(struct session *sp) {
   pthread_mutex_unlock(&session_mutex);
 }
 
-struct session *find_session_from_websocket(onion_websocket *ws) {
+// Note that this locks the session_mutex *if* it finds a session
+static struct session *find_session_from_websocket(onion_websocket *ws) {
   pthread_mutex_lock(&session_mutex);
 //fprintf(stderr,"%s: first=%p ws=%p\n",__FUNCTION__,sessions,ws);
   struct session *sp=sessions;
@@ -163,11 +163,14 @@ struct session *find_session_from_websocket(onion_websocket *ws) {
     sp=sp->next;
   }
 //fprintf(stderr,"%s: ws=%p sp=%p\n",__FUNCTION__,ws,sp);
-  pthread_mutex_unlock(&session_mutex);
+  if (sp == NULL) {
+    pthread_mutex_unlock(&session_mutex);
+  }
   return sp;
 }
 
-struct session *find_session_from_ssrc(int ssrc) {
+// Note that this locks the session_mutex *if* it finds a session
+static struct session *find_session_from_ssrc(int ssrc) {
   pthread_mutex_lock(&session_mutex);
 //fprintf(stderr,"%s: first=%p ssrc=%d\n",__FUNCTION__,sessions,ssrc);
   struct session *sp=sessions;
@@ -178,7 +181,9 @@ struct session *find_session_from_ssrc(int ssrc) {
     sp=sp->next;
   }
 //fprintf(stderr,"%s: ssrc=%d sp=%p\n",__FUNCTION__,ssrc,sp);
-  pthread_mutex_unlock(&session_mutex);
+  if (sp == NULL) {
+    pthread_mutex_unlock(&session_mutex);
+  }
   return sp;
 }
 
@@ -213,17 +218,24 @@ static void check_frequency(struct session *sp) {
 
 onion_connection_status websocket_cb(void *data, onion_websocket * ws,
                                                ssize_t data_ready_len) {
-  char tmp[MAX_BINS];
-  if (data_ready_len > sizeof(tmp))
-    data_ready_len = sizeof(tmp) - 1;
-
-  //fprintf(stderr,"websocket_cb: ws=%p len=%ld\n",ws,data_ready_len);
-
   struct session *sp=find_session_from_websocket(ws);
   if(sp==NULL) {
     ONION_ERROR("Error did not find session for: ws=%p", ws);
     return OCS_NEED_MORE_DATA;
   }
+
+  if ((int) data_ready_len < 0) {
+    // The browser is closing the connection
+    websocket_closed(sp);
+    delete_session(sp);			// Note that this releases the lock
+    return OCS_CLOSE_CONNECTION;
+  }
+
+  char tmp[MAX_BINS];
+  if (data_ready_len > sizeof(tmp))
+    data_ready_len = sizeof(tmp) - 1;
+
+  //fprintf(stderr,"websocket_cb: ws=%p len=%ld\n",ws,data_ready_len);
 
   int len = onion_websocket_read(ws, tmp, data_ready_len);
   if (len <= 0) {
@@ -231,7 +243,7 @@ onion_connection_status websocket_cb(void *data, onion_websocket * ws,
     ONION_ERROR("Error reading data: %d: %s (%d) ws=%p", errno, strerror(errno),
                 data_ready_len,ws);
     websocket_closed(sp);
-    delete_session(sp);
+    delete_session(sp);			// Note that this releases the lock
     return OCS_CLOSE_CONNECTION;
   }
   tmp[len] = 0;
@@ -382,6 +394,8 @@ onion_connection_status websocket_cb(void *data, onion_websocket * ws,
     }
   }
 
+  pthread_mutex_unlock(&session_mutex);
+
   return OCS_NEED_MORE_DATA;
 }
 
@@ -510,6 +524,7 @@ onion_connection_status home(void *data, onion_request * req,
       if(s==NULL) {
         break;
       }
+      pthread_mutex_unlock(&session_mutex);
     }
     sp->ssrc=START_SESSION_ID+(i*2);
   }
@@ -592,6 +607,7 @@ static void *audio_thread(void *arg) {
           fprintf(stderr,"%s: write failed: %d\n",__FUNCTION__,r);
         }
       }
+      pthread_mutex_unlock(&session_mutex);
     }  // not found
   }
 
@@ -915,6 +931,7 @@ void *ctrl_thread(void *arg) {
 	  int length=(PKTSIZE-header_size)/sizeof(float);
 	  int npower = extract_powers(powers,length, &time,&r_freq,&r_bin_bw,sp->ssrc+1,buffer+1,length-1);
 	  if(npower < 0){
+	    pthread_mutex_unlock(&session_mutex);
 	    continue; // Invalid for some reason
 	  }
 
@@ -939,6 +956,7 @@ void *ctrl_thread(void *arg) {
 	    fprintf(stderr,"%s: write failed: %d(size=%d)\n",__FUNCTION__,r,size);
 	  }
 	  pthread_mutex_unlock(&sp->ws_mutex);
+	  pthread_mutex_unlock(&session_mutex);
 	}
       } else {
         if((sp=find_session_from_ssrc(ssrc)) != NULL){
@@ -968,6 +986,7 @@ void *ctrl_thread(void *arg) {
 	    fprintf(stderr,"%s: write failed: %d\n",__FUNCTION__,r);
 	  }
 	  pthread_mutex_unlock(&sp->ws_mutex);
+	  pthread_mutex_unlock(&session_mutex);
 	}
       }
     } else if(length > 2 && (enum pkt_type)buffer[0] == STATUS) {
