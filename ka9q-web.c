@@ -404,7 +404,7 @@ int main(int argc,char **argv) {
 #define str(s) #s
   char const *port="8081";
   char const *dirname=xstr(RESOURCES_BASE_DIR) "/html";
-  char const *mcast="web.local";
+  char const *mcast="hf.local";
 
   App_path=argv[0];
   {
@@ -856,7 +856,7 @@ int init_demod(struct channel *channel){
   channel->filter.min_IF = channel->filter.max_IF = channel->filter.kaiser_beta = NAN;
   channel->output.headroom = channel->linear.hangtime = channel->linear.recovery_rate = NAN;
   channel->sig.bb_power = channel->sig.snr = channel->sig.foffset = NAN;
-  channel->fm.pdeviation = channel->linear.cphase = channel->linear.lock_timer = NAN;
+  channel->fm.pdeviation = channel->linear.cphase = NAN;
   channel->output.gain = NAN;
   channel->tp1 = channel->tp2 = NAN;
   return 0;
