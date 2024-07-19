@@ -85,8 +85,8 @@ void *poll_thread(void *arg);
 static int send_poll(int ssrc);
 
 struct frontend Frontend;
-static struct sockaddr_storage Metadata_source_socket;       // Source of metadata
-static struct sockaddr_storage Metadata_dest_socket;         // Dest of metadata (typically multicast)
+struct sockaddr_storage Metadata_source_socket;       // Source of metadata
+struct sockaddr_storage Metadata_dest_socket;         // Dest of metadata (typically multicast)
 
 static int const DEFAULT_IP_TOS = 48;
 static int const DEFAULT_MCAST_TTL = 1;
