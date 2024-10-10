@@ -16,6 +16,7 @@
 #include <onion/onion.h>
 #include <onion/dict.h>
 #include <onion/sessions.h>
+#include <onion/shortcuts.h>
 #include <onion/websocket.h>
 #include <string.h>
 #include <errno.h>
@@ -399,20 +400,50 @@ onion_connection_status websocket_cb(void *data, onion_websocket * ws,
   return OCS_NEED_MORE_DATA;
 }
 
+int redirect_to_https(const char *d, onion_request *request, onion_response *response) {
+	char newurl[1024];
+
+	char *host = strdup(onion_request_get_header(request, "host"));
+	if (host) {
+		char *colon = strchr(host, ':');
+		if (colon) {
+			*colon = '\0';
+		}
+	}
+	snprintf(newurl, sizeof(newurl), "https://%s:%s/%s", host, (const char *) d, onion_request_get_path(request));
+	free(host);
+	newurl[sizeof(newurl)-1] = '\0';
+	return onion_shortcut_response_extra_headers("<h1>302 - Moved</h1>",
+                                               HTTP_REDIRECT, request, response,
+                                               "Location", newurl, NULL);
+}
+void redirect_free(const char *d) {
+}
+
+void *redirect_listener(void *arg) {
+	onion_listen((onion *) arg);
+	onion_free((onion *) arg);
+	return NULL;
+}
+
 int main(int argc,char **argv) {
 #define xstr(s) str(s)
 #define str(s) #s
   char const *port="8081";
+  char const *tls_port=NULL;
   char const *dirname=xstr(RESOURCES_BASE_DIR) "/html";
   char const *mcast="hf.local";
 
   App_path=argv[0];
   {
     int c;
-    while((c = getopt(argc,argv,"d:p:m:h")) != -1){
+    while((c = getopt(argc,argv,"d:p:t:m:h")) != -1){
       switch(c) {
         case 'd':
           dirname=optarg;
+          break;
+        case 't':
+          tls_port=optarg;
           break;
         case 'p':
           port=optarg;
@@ -423,7 +454,7 @@ int main(int argc,char **argv) {
         case 'h':
         default:
           fprintf(stderr,"Usage: %s\n",App_path);
-          fprintf(stderr,"       %s [-d directory] [-p port] [-m mcast_address]\n",App_path);
+          fprintf(stderr,"       %s [-d directory] [-p port] [-t tls-port] [-m mcast_address]\n",App_path);
           exit(EX_USAGE);
           break;
       }
@@ -434,8 +465,23 @@ int main(int argc,char **argv) {
   init_connections(mcast);
 
   onion *o = onion_new(O_THREADED);
+  if (tls_port) {
+    onion_set_certificate(o, O_SSL_CERTIFICATE_KEY, "ka9q.crt", "ka9q.key", O_SSL_NONE);
+    onion_set_port(o, tls_port);
+    // Create another endpoint to redirect http -> https
+    onion *ored = onion_new(O_THREADED);
+    onion_set_port(ored, port);
+    onion_set_hostname(ored, "::");
+    onion_handler *redir=onion_handler_new((onion_handler_handler)redirect_to_https,
+					  (void *) tls_port,(onion_handler_private_data_free) redirect_free);
+    onion_set_root_handler(ored, redir);
+
+    pthread_t redirector;
+    pthread_create(&redirector, NULL, redirect_listener, ored);
+  } else {
+    onion_set_port(o, port);
+  }
   onion_url *urls=onion_root_url(o);
-  onion_set_port(o, port);
   onion_set_hostname(o, "::");
   onion_handler *pages = onion_handler_export_local_new(dirname);
   onion_handler_add(onion_url_to_handler(urls), pages);

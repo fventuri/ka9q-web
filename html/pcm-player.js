@@ -10,6 +10,7 @@ PCMPlayer.prototype.init = function(option) {
         flushingTime: 500
     };
     this.option = Object.assign({}, defaults, option);
+    this.grabbing = null;
     this.samples = new Float32Array();
     this.flush = this.flush.bind(this);
     this.interval = setInterval(this.flush, this.option.flushingTime);
@@ -67,11 +68,22 @@ PCMPlayer.prototype.feed = function(data) {
         return;
     }
     var fdata = this.getFormatedValue(data);
+    if (this.grabbing) {
+	this.grabbing(new this.typedArray(data.buffer));
+    }
     var tmp = new Float32Array(this.samples.length + fdata.length);
     tmp.set(this.samples, 0);
     tmp.set(fdata, this.samples.length);
     this.samples = tmp;
     this.audioCtx.resume();
+};
+
+PCMPlayer.prototype.startGrabbing = function(callback) {
+    this.grabbing = callback;
+};
+
+PCMPlayer.prototype.stopGrabbing = function(callback) {
+    this.grabbing = null;
 };
 
 PCMPlayer.prototype.getFormatedValue = function(data) {
@@ -127,13 +139,28 @@ PCMPlayer.prototype.flush = function() {
         }
     }
     
-    if (this.startTime < this.audioCtx.currentTime) {
-        this.startTime = this.audioCtx.currentTime;
+    if (this.startTime >= this.audioCtx.currentTime + 1) {
+        // Throw away audio data
+	console.log("Start time too far in the future -- discarding audio -- offset: " + (this.startTime - this.audioCtx.currentTime));
+        this.samples = new Float32Array();
+	return;
     }
-    //console.log('start vs current '+this.startTime+' vs '+this.audioCtx.currentTime+' duration: '+audioBuffer.duration);
-    bufferSource.buffer = audioBuffer;
-    bufferSource.connect(this.gainNode);
-    bufferSource.start(this.startTime);
-    this.startTime += audioBuffer.duration;
+    if (this.startTime < this.audioCtx.currentTime &&
+	this.startTime > this.audioCtx.currentTime - 0.1) {
+	this.startTime = this.audioCtx.currentTime;
+    }
+    if (this.startTime >= this.audioCtx.currentTime) {
+	//console.log('start vs current '+this.startTime+' vs '+this.audioCtx.currentTime+' duration: '+audioBuffer.duration + ' offset: ' + (this.startTime - this.audioCtx.currentTime) + ' outputTimestamp ' + this.audioCtx.getOutputTimestamp());
+	bufferSource.buffer = audioBuffer;
+	bufferSource.connect(this.gainNode);
+	bufferSource.start(this.startTime);
+        this.startTime += audioBuffer.duration;
+    } else {
+	console.log("Start time too far in the past -- discarding audio -- offset: " + (this.audioCtx.currentTime - this.startTime));
+	if (this.startTime < this.audioCtx.currentTime ) {
+	    this.startTime = this.audioCtx.currentTime;
+	} 
+        this.startTime += audioBuffer.duration;
+    }
     this.samples = new Float32Array();
 };

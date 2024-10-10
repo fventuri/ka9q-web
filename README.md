@@ -105,6 +105,11 @@ ka9q-web
 
 Finally open a browser and connect locally to http://localhost:8081 , or from a remote browser to http://<your computer name/IP>:8081
 
+If you want to be able to record audio in the browser, then you need to start `ka9q-web -t 8082` which sets 8082 as the TLS port. When you connect
+the browser will tell you that it is an insecure connection, but you can just click through this. It uses the certificate/key pair found in
+`ka9q.key` and `ka9q.crt`. These can be changed to any certificate that you want. The 8081 port is still available and will just redirect you
+to the secure port.
+
 NOTE: to start ka9q-web on a different ka9q-radio control address, the command line option is '-m', for instance:
 ```
 ka9q-web -m hf.local
