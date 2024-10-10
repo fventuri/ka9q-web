@@ -10,6 +10,7 @@ PCMPlayer.prototype.init = function(option) {
         flushingTime: 500
     };
     this.option = Object.assign({}, defaults, option);
+    this.grabbing = null;
     this.samples = new Float32Array();
     this.flush = this.flush.bind(this);
     this.interval = setInterval(this.flush, this.option.flushingTime);
@@ -67,11 +68,22 @@ PCMPlayer.prototype.feed = function(data) {
         return;
     }
     var fdata = this.getFormatedValue(data);
+    if (this.grabbing) {
+	this.grabbing(new this.typedArray(data.buffer));
+    }
     var tmp = new Float32Array(this.samples.length + fdata.length);
     tmp.set(this.samples, 0);
     tmp.set(fdata, this.samples.length);
     this.samples = tmp;
     this.audioCtx.resume();
+};
+
+PCMPlayer.prototype.startGrabbing = function(callback) {
+    this.grabbing = callback;
+};
+
+PCMPlayer.prototype.stopGrabbing = function(callback) {
+    this.grabbing = null;
 };
 
 PCMPlayer.prototype.getFormatedValue = function(data) {

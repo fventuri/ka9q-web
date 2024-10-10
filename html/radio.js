@@ -234,7 +234,8 @@
         spectrum.setHighHz(highHz);
         //msg=document.getElementById('msg');
         //msg.focus();
-        ws=new WebSocket('ws://'+window.location.host);
+	const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+        ws=new WebSocket(protocol+window.location.host);
         ws.onmessage=on_ws_message;
         ws.onopen=on_ws_open;
         ws.onclose=on_ws_close;
@@ -406,14 +407,158 @@
     {
         var btn = document.getElementById("audio_button");
         if(btn.value==="START") {
-          btn.value = "STOP";
-          btn.innerHTML = "Stop Audio";
-          ws.send("A:START:"+ssrc.toString());
-          player.resume();
+	    btn.value = "STOP";
+	    btn.innerHTML = "Stop Audio";
+	    ws.send("A:START:"+ssrc.toString());
+	    player.resume();
         } else {
-          btn.value = "START";
-          btn.innerHTML = "Start Audio";
-          ws.send("A:STOP:"+ssrc.toString());
+	    var record_btn = document.getElementById("record_audio_button");
+	    if (record_btn.value === "STOP") {
+		await record_audio_start_stop();
+	    }
+	    btn.value = "START";
+	    btn.innerHTML = "Start Audio";
+	    ws.send("A:STOP:"+ssrc.toString());
         }
     }
 
+    async function getSaveFileStream(filename) {
+	try {
+	    // Request a handle for the file to save
+	    const fileHandle = await window.showSaveFilePicker({
+		suggestedName: filename,
+		types: [
+		    {
+			description: 'Audio Files',
+			accept: { 'audio/wav': ['.wav'] },
+		    },
+		],
+	    });
+
+	    // Create a writable stream to the file
+	    const writableStream = await fileHandle.createWritable();
+
+	    // Return the writable stream to be used for writing
+	    return writableStream;
+	} catch (error) {
+	    console.error('Error saving file:', error);
+	    return null; // Handle any errors, such as if the user cancels the save dialog
+	}
+    }
+
+    async function writeWavHeader(writableStream, dataLength) {
+	const sampleRate = 12000;
+	const numChannels = 1; // Mono
+	const bitsPerSample = 16; // Int16
+	const audioFormat = 1; // Int16
+
+	const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+	const blockAlign = numChannels * bitsPerSample / 8;
+
+	const header = new ArrayBuffer(44); // WAV header is always 44 bytes
+	const view = new DataView(header);
+
+	// RIFF Chunk Descriptor
+	writeString(view, 0, 'RIFF'); // ChunkID
+	view.setUint32(4, 36 + dataLength, true); // ChunkSize (36 + Subchunk2Size)
+	writeString(view, 8, 'WAVE'); // Format
+
+	// "fmt " Subchunk
+	writeString(view, 12, 'fmt '); // Subchunk1ID
+	view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+	view.setUint16(20, audioFormat, true); // AudioFormat (3 for IEEE float)
+	view.setUint16(22, numChannels, true); // NumChannels
+	view.setUint32(24, sampleRate, true); // SampleRate
+	view.setUint32(28, byteRate, true); // ByteRate
+	view.setUint16(32, blockAlign, true); // BlockAlign
+	view.setUint16(34, bitsPerSample, true); // BitsPerSample
+
+	// "data" Subchunk
+	writeString(view, 36, 'data'); // Subchunk2ID
+	view.setUint32(40, dataLength, true); // Subchunk2Size (NumSamples * NumChannels * BytesPerSample)
+
+	// Write the header to the stream
+	await writableStream.write(header);
+    }
+
+    // Helper function to write ASCII strings into the DataView
+    function writeString(view, offset, string) {
+	for (let i = 0; i < string.length; i++) {
+	    view.setUint8(offset + i, string.charCodeAt(i));
+	}
+    }
+
+    async function createWavFile(writableStream, audioDataList) {
+	var length = 0;
+        for (var i = 0; i < audioDataList.length; i++ ) {
+	    length += audioDataList[i].length;
+	}
+	const arrayType = audioDataList[0].constructor.name;
+	if (arrayType === "Int16Array") {
+	    const itemSize = 2;
+	    const dataLength = length * itemSize; 
+	    await writeWavHeader(writableStream, dataLength);
+
+	    for (var i = 0; i < audioDataList.length; i++ ) {
+		var audioData = audioDataList[i];
+		// Now write the audio data to the writableStream
+		const buffer = new ArrayBuffer(audioData.length * itemSize);
+		const view = new DataView(buffer);
+
+		for (let i = 0; i < audioData.length; i++) {
+		    view.setInt16(i * itemSize, audioData[i], true); // Write each item to the buffer
+		}
+
+		// Write the audio buffer to the file
+		await writableStream.write(buffer);
+	    }
+	}
+    }
+
+    function createWavFilename() {
+	const now = new Date();
+	const isoString = now.toISOString(); // Format: "YYYY-MM-DDTHH:mm:ss.sssZ"
+
+	// Replace any invalid filename characters (like ":" from time) with safe characters, e.g., "-"
+	const safeIsoString = isoString.substring(0, 19).replace(/[:-]/g, '');
+
+	return safeIsoString + "-" + document.getElementById('mode').value + '@' + document.getElementById('freq').value + '.wav';
+    }
+
+    const audio_data_list = [];
+
+    async function record_audio_start_stop()
+    {
+        var btn = document.getElementById("record_audio_button");
+        if(btn.value==="START") {
+	    // Pop a create file dialog
+	    var audio_btn = document.getElementById("audio_button");
+	    if (audio_btn.value === "START") {
+		await audio_start_stop();
+	    }
+	    btn.value = "STOP";
+	    btn.innerHTML = "Stop Recording";
+	    btn.saveFileName = createWavFilename();
+	    player.startGrabbing(function(data) { audio_data_list.push(data); });
+        } else if (btn.value === "STOP") {
+	    player.stopGrabbing();
+	    btn.value = "WRITING";
+	    btn.innerHTML = "Saving....";
+	    var stream = await getSaveFileStream(btn.saveFileName);
+	    if (stream != null) {
+		await createWavFile(stream, audio_data_list);
+		await stream.close();
+	    }
+	    audio_data_list.length = 0;
+	    btn.value = "START";
+	    btn.innerHTML = "Start Recording";
+        }
+    }
+
+{
+    // Get rid of the audio record button if not loaded in a secure context
+    if (!window.showSaveFilePicker) {
+	var btn = document.getElementById("record_audio_button");
+	btn.style.visibility = 'hidden';
+    }
+}
