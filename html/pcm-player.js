@@ -139,13 +139,28 @@ PCMPlayer.prototype.flush = function() {
         }
     }
     
-    if (this.startTime < this.audioCtx.currentTime) {
-        this.startTime = this.audioCtx.currentTime;
+    if (this.startTime >= this.audioCtx.currentTime + 1) {
+        // Throw away audio data
+	console.log("Start time too far in the future -- discarding audio -- offset: " + (this.startTime - this.audioCtx.currentTime));
+        this.samples = new Float32Array();
+	return;
     }
-    //console.log('start vs current '+this.startTime+' vs '+this.audioCtx.currentTime+' duration: '+audioBuffer.duration);
-    bufferSource.buffer = audioBuffer;
-    bufferSource.connect(this.gainNode);
-    bufferSource.start(this.startTime);
-    this.startTime += audioBuffer.duration;
+    if (this.startTime < this.audioCtx.currentTime &&
+	this.startTime > this.audioCtx.currentTime - 0.1) {
+	this.startTime = this.audioCtx.currentTime;
+    }
+    if (this.startTime >= this.audioCtx.currentTime) {
+	//console.log('start vs current '+this.startTime+' vs '+this.audioCtx.currentTime+' duration: '+audioBuffer.duration + ' offset: ' + (this.startTime - this.audioCtx.currentTime) + ' outputTimestamp ' + this.audioCtx.getOutputTimestamp());
+	bufferSource.buffer = audioBuffer;
+	bufferSource.connect(this.gainNode);
+	bufferSource.start(this.startTime);
+        this.startTime += audioBuffer.duration;
+    } else {
+	console.log("Start time too far in the past -- discarding audio -- offset: " + (this.audioCtx.currentTime - this.startTime));
+	if (this.startTime < this.audioCtx.currentTime ) {
+	    this.startTime = this.audioCtx.currentTime;
+	} 
+        this.startTime += audioBuffer.duration;
+    }
     this.samples = new Float32Array();
 };
