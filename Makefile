@@ -24,6 +24,7 @@ ka9q-web: ka9q-web.o $(KA9Q_RADIO_OBJS)
 install: ka9q-web
 	install -m 755 $^ $(PREFIX)/sbin
 	install -m 644 -D html/* -t $(RESOURCES_BASE_DIR)/html/
+	install -m 644 -D ka9q.crt ka9q.key -t $(RESOURCES_BASE_DIR)/
 
 install-config:
 	install -b -m 644 config/* /etc/radio

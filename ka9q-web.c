@@ -466,7 +466,7 @@ int main(int argc,char **argv) {
 
   onion *o = onion_new(O_THREADED);
   if (tls_port) {
-    onion_set_certificate(o, O_SSL_CERTIFICATE_KEY, "ka9q.crt", "ka9q.key", O_SSL_NONE);
+    onion_set_certificate(o, O_SSL_CERTIFICATE_KEY, xstr(RESOURCES_BASE_DIR) "/ka9q.crt", xstr(RESOURCES_BASE_DIR) "/ka9q.key", O_SSL_NONE);
     onion_set_port(o, tls_port);
     // Create another endpoint to redirect http -> https
     onion *ored = onion_new(O_THREADED);
