@@ -234,7 +234,10 @@
         spectrum.setHighHz(highHz);
         //msg=document.getElementById('msg');
         //msg.focus();
-        ws=new WebSocket('ws://'+window.location.host);
+        ws=new WebSocket(
+            (window.location.protocol == 'https:' ? 'wss://' : 'ws://') +
+            window.location.host
+        );
         ws.onmessage=on_ws_message;
         ws.onopen=on_ws_open;
         ws.onclose=on_ws_close;
